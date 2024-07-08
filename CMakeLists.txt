@@ -7,4 +7,6 @@ add_executable(Panda main.c
         chunk.c
         memory.c
         debug.c
-        debug.h)
+        debug.h
+        value.c
+        value.h)

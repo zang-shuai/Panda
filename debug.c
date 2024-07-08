@@ -1,7 +1,7 @@
 //
 // Created by 臧帅 on 24-7-8.
 //
-
+// 该模块用于输出 chunk 内容，便于检查程序
 #include "debug.h"
 #include <stdio.h>
 
@@ -10,6 +10,8 @@ static int simpleInstruction(const char *name, int offset) {
     return offset + 1;
 }
 
+
+// 遍历输出整个chunk
 void disassembleChunk(Chunk *chunk, const char *name) {
     printf("== %s ==\n", name);
 
@@ -18,6 +20,8 @@ void disassembleChunk(Chunk *chunk, const char *name) {
     }
 }
 
+
+// 输出该 chunk 块的具体情况
 int disassembleInstruction(Chunk *chunk, int offset) {
     printf("%04d ", offset);
 
