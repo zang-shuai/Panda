@@ -24,6 +24,8 @@ typedef struct {
     // 数组容量，超过容量时扩容
     int capacity;
     uint8_t *code;
+//    行号（报错时使用）
+    int *lines;
     ValueArray constants;
 } Chunk;
 
@@ -34,7 +36,8 @@ void initChunk(Chunk *chunk);
 void freeChunk(Chunk *chunk);
 
 //写入数据
-void writeChunk(Chunk *chunk, uint8_t byte);
+
+void writeChunk(Chunk* chunk, uint8_t byte, int line);
 
 // 常量池中增加常量
 int addConstant(Chunk *chunk, Value value);
