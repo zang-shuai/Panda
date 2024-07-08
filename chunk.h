@@ -11,6 +11,9 @@
 
 //定义操作码
 typedef enum {
+//    常量指令
+    OP_CONSTANT,
+//    return 指令
     OP_RETURN,
 } OpCode;
 
