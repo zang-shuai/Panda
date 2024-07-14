@@ -11,9 +11,16 @@
 
 //定义操作码
 typedef enum {
-//    常量指令
+// 常量指令
     OP_CONSTANT,
-//    return 指令
+// 一元指令，取反指令
+    OP_NEGATE,
+//    +-*/二元指令
+    OP_ADD,
+    OP_SUBTRACT,
+    OP_MULTIPLY,
+    OP_DIVIDE,
+// return 指令
     OP_RETURN,
 } OpCode;
 
