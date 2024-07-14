@@ -92,8 +92,22 @@ static InterpretResult run() {
 
 //
 InterpretResult interpret(const char* source) {
-    compile(source);
-    return INTERPRET_OK;
+    Chunk chunk;
+    initChunk(&chunk);
+// 编译 source文件，编译结果放入chunk中
+    if (!compile(source, &chunk)) {
+        freeChunk(&chunk);
+        return INTERPRET_COMPILE_ERROR;
+    }
+    // 将 chunk 交予虚拟机
+    vm.chunk = &chunk;
+    vm.ip = vm.chunk->code;
+    // 获取程序的解释结果
+    InterpretResult result = run();
+    // 释放 chunk
+    freeChunk(&chunk);
+    // 返回结果
+    return result;
 }
 
 void push(Value value) {

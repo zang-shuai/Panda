@@ -10,4 +10,6 @@
 #include <stdint.h>
 // 是否为调试模式
 #define DEBUG_TRACE_EXECUTION
+// 调试打印代码
+#define DEBUG_PRINT_CODE
 #endif //PANDA_COMMON_H
