@@ -7,17 +7,17 @@
 #include <string.h>
 
 static void repl() {
-    char line[1024];
-    for (;;) {
-        printf("> ");
-
-        if (!fgets(line, sizeof(line), stdin)) {
-            printf("\n");
-            break;
-        }
+    char line[1024]="!(5 - 4 > 3 * 2 == !nil)";
+//    for (;;) {
+//        printf("> ");
+//
+//        if (!fgets(line, sizeof(line), stdin)) {
+//            printf("\n");
+//            break;
+//        }
 
         interpret(line);
-    }
+//    }
 }
 // 读取输入进来的文件
 #include <stdio.h>
@@ -76,7 +76,7 @@ static void runFile(const char *path) {
 
 int main(int argc, const char *argv[]) {
 //    chunk 与 vm 测试
-//    initVM();
+    initVM();
 //    Chunk chunk;
 //    initChunk(&chunk);
 ////    定义常量指令
@@ -115,6 +115,7 @@ int main(int argc, const char *argv[]) {
         fprintf(stderr, "Usage: clox [path]\n");
         exit(64);
     }
+
 
     freeVM();
     return 0;
