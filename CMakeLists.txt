@@ -9,4 +9,6 @@ add_executable(Panda main.c
         debug.c
         debug.h
         value.c
-        value.h)
+        value.h
+        vm.c
+        vm.h)

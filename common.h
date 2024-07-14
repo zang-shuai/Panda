@@ -8,5 +8,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
+// 是否为调试模式
+#define DEBUG_TRACE_EXECUTION
 #endif //PANDA_COMMON_H

@@ -42,6 +42,7 @@ void freeChunk(Chunk *chunk) {
     initChunk(chunk);
 }
 
+// 将值 value 插入到常量池中，并返回该值在常量池中的位置
 int addConstant(Chunk *chunk, Value value) {
     writeValueArray(&chunk->constants, value);
     return chunk->constants.count - 1;

@@ -31,6 +31,7 @@ void freeValueArray(ValueArray *array) {
     initValueArray(array);
 }
 
+// 输出常量池中的数据的值
 void printValue(Value value) {
     printf("%g", value);
 }

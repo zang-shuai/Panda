@@ -21,9 +21,11 @@ void disassembleChunk(Chunk *chunk, const char *name) {
     }
 }
 
+
 static int constantInstruction(const char *name, Chunk *chunk,
                                int offset) {
     uint8_t constant = chunk->code[offset + 1];
+    // 输出指令名，和该指令所对应的常量在常量池中的位置
     printf("%-16s %4d '", name, constant);
     printValue(chunk->constants.values[constant]);
     printf("'\n");
@@ -33,6 +35,7 @@ static int constantInstruction(const char *name, Chunk *chunk,
 // 输出该 chunk 块的具体情况
 int disassembleInstruction(Chunk *chunk, int offset) {
     printf("%04d ", offset);
+    // 如果当前值的行号与上一个相同，则输出|，否则返回行号
     if (offset > 0 &&
         chunk->lines[offset] == chunk->lines[offset - 1]) {
         printf("   | ");
@@ -40,6 +43,7 @@ int disassembleInstruction(Chunk *chunk, int offset) {
         printf("%4d ", chunk->lines[offset]);
     }
     uint8_t instruction = chunk->code[offset];
+    // 通过 switch 方法返回当前指令与当前指令关联的下一个或多个指令，
     switch (instruction) {
         case OP_CONSTANT:
             return constantInstruction("OP_CONSTANT", chunk, offset);
