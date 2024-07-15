@@ -7,6 +7,7 @@
 
 #include "chunk.h"
 #include "value.h"
+#include "table.h"
 
 #define STACK_MAX 256
 // 虚拟机
@@ -18,6 +19,7 @@ typedef struct {
     // 虚拟机栈
     Value stack[STACK_MAX];
     Value *stackTop;
+    Table strings;
     // 对象链
     Obj* objects;
 } VM;

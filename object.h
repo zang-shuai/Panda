@@ -29,6 +29,8 @@ struct ObjString {
     Obj obj;
     int length;
     char *chars;
+    // 字符串的哈希值，用于在 hash 表中查找
+    uint32_t hash;
 };
 // C 语言字符串转为 panda 字符串
 ObjString* takeString(char* chars, int length);
