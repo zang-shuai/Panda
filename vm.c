@@ -5,8 +5,10 @@
 #include "vm.h"
 #include "common.h"
 #include <stdio.h>
-
+#include <string.h>
 #include <stdarg.h>
+#include "object.h"
+#include "memory.h"
 #include "compiler.h"
 #include "debug.h"
 
@@ -31,9 +33,11 @@ static void runtimeError(const char *format, ...) {
 
 void initVM() {
     resetStack();
+    vm.objects = NULL;
 }
 
 void freeVM() {
+    freeObjects();
 }
 
 static Value peek(int distance) {
@@ -43,6 +47,21 @@ static Value peek(int distance) {
 // 判断该 value 是否为 nil 或者 false
 static bool isFalsey(Value value) {
     return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
+}
+
+// 连接函数，连接两个字符串
+static void concatenate() {
+    ObjString* b = AS_STRING(pop());
+    ObjString* a = AS_STRING(pop());
+
+    int length = a->length + b->length;
+    char* chars = ALLOCATE(char, length + 1);
+    memcpy(chars, a->chars, a->length);
+    memcpy(chars + a->length, b->chars, b->length);
+    chars[length] = '\0';
+
+    ObjString* result = takeString(chars, length);
+    push(OBJ_VAL(result));
 }
 
 // 运行指令集，返回解释结果
@@ -120,9 +139,20 @@ static InterpretResult run() {
                 break;
 
 
-            case OP_ADD:
-                BINARY_OP(NUMBER_VAL, +);
+            case OP_ADD: {
+                if (IS_STRING(peek(0)) && IS_STRING(peek(1))) {
+                    concatenate();
+                } else if (IS_NUMBER(peek(0)) && IS_NUMBER(peek(1))) {
+                    double b = AS_NUMBER(pop());
+                    double a = AS_NUMBER(pop());
+                    push(NUMBER_VAL(a + b));
+                } else {
+                    runtimeError(
+                            "Operands must be two numbers or two strings.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
                 break;
+            }
             case OP_SUBTRACT:
                 BINARY_OP(NUMBER_VAL, -);
                 break;
@@ -152,7 +182,6 @@ static InterpretResult run() {
                 return INTERPRET_OK;
             }
         }
-        printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 
     }
 #undef READ_BYTE
@@ -160,11 +189,12 @@ static InterpretResult run() {
 #undef BINARY_OP
 }
 
-//
+// 启动解释器
 InterpretResult interpret(const char *source) {
+    // 为解释器赋予 chunk
     Chunk chunk;
     initChunk(&chunk);
-// 编译 source文件，编译结果放入chunk中
+    // 编译 source文件，编译结果放入chunk中
     if (!compile(source, &chunk)) {
         freeChunk(&chunk);
         return INTERPRET_COMPILE_ERROR;

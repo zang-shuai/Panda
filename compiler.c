@@ -146,7 +146,9 @@ static void parsePrecedence(Precedence precedence);
 
 static ParseRule *getRule(TokenType type);
 
+// 解析前进所得的 token
 static void expression() {
+    // 解析优先级，输入的为 =
     parsePrecedence(PREC_ASSIGNMENT);
 }
 
@@ -217,12 +219,17 @@ static void grouping() {
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
 }
 
-
+// 将数字加入到常量池中
 static void number() {
     // 字符串转数字
     double value = strtod(parser.previous.start, NULL);
     // 将OP_CONSTANT放入 chunk 中，并将 value 放入常量池中
     emitConstant(NUMBER_VAL(value));
+}
+// 将字符串加入到常量池中
+static void string() {
+    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
+                                    parser.previous.length - 2)));
 }
 
 // 一元表达式解析
@@ -291,7 +298,7 @@ ParseRule rules[] = {
         // 其他
         [TOKEN_IDENTIFIER]    = {NULL, NULL, PREC_NONE},
         // 字符串
-        [TOKEN_STRING]        = {NULL, NULL, PREC_NONE},
+        [TOKEN_STRING]        = {string, NULL, PREC_NONE},
         // 数字
         [TOKEN_NUMBER]        = {number, NULL, PREC_NONE},
         [TOKEN_AND]           = {NULL, NULL, PREC_NONE},
@@ -316,15 +323,18 @@ ParseRule rules[] = {
 
 // 解析优先级
 static void parsePrecedence(Precedence precedence) {
-    // 再前进一步
+    // 再前进一步（获取一个 token）
     advance();
-    //
+    //  获取指针的前缀函数，为空则表示该符号不能用于前缀
     ParseFn prefixRule = getRule(parser.previous.type)->prefix;
     if (prefixRule == NULL) {
         error("Expect expression.");
         return;
     }
+    // 执行该函数
     prefixRule();
+
+    //  pre不断前进， 直到大于current，每次前进，advance 一次，前进后获取其中缀的规则并执行
     while (precedence <= getRule(parser.current.type)->precedence) {
         advance();
         ParseFn infixRule = getRule(parser.previous.type)->infix;
@@ -356,14 +366,15 @@ bool compile(const char *source, Chunk *chunk) {
     // 初试状态无错误
     parser.hadError = false;
     parser.panicMode = false;
-    // 前进一位
+    // 仅仅前进一位
     advance();
-    // 解析表达式
+    // 解析表达式（将会继续前进）
     expression();
-    // 判断current是否出现错误
+    // 判断current是否出现错误，错误则报错并直接停止
     consume(TOKEN_EOF, "Expect end of expression.");
     // 结束编译
     endCompiler();
+    // 返回是否编译成功
     return !parser.hadError;
 //    int line = -1;
 //    for (;;) {

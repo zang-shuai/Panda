@@ -18,6 +18,8 @@ typedef struct {
     // 虚拟机栈
     Value stack[STACK_MAX];
     Value *stackTop;
+    // 对象链
+    Obj* objects;
 } VM;
 
 // 解释结果
@@ -30,6 +32,7 @@ typedef enum {
     INTERPRET_RUNTIME_ERROR
 } InterpretResult;
 
+extern VM vm;
 
 void initVM();
 

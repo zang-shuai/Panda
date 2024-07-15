@@ -5,7 +5,9 @@
 #ifndef PANDA_COMPILER_H
 #define PANDA_COMPILER_H
 // 将文件转为chunk
+#include "object.h"
 #include "chunk.h"
+#include "vm.h"
 
 bool compile(const char* source, Chunk* chunk);
 

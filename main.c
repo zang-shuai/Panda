@@ -7,7 +7,7 @@
 #include <string.h>
 
 static void repl() {
-    char line[1024]="!(5 - 4 > 3 * 2 == !nil)";
+    char line[1024] = "!(5 - 4 > 3 * 2 == !nil)";
 //    for (;;) {
 //        printf("> ");
 //

@@ -15,4 +15,6 @@ add_executable(Panda main.c
         compiler.c
         compiler.h
         scanner.c
-        scanner.h)
+        scanner.h
+        object.c
+        object.h)

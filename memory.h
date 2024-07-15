@@ -7,7 +7,14 @@
 
 #include "common.h"
 #include "chunk.h"
+#include "object.h"
 #include <stdlib.h>
+
+// 在堆上分配一个新数组，其大小刚好可以容纳字符串中的字符和末尾的结束符
+#define ALLOCATE(type, count) \
+    (type*)reallocate(NULL, 0, sizeof(type) * (count))
+
+#define FREE(type, pointer) reallocate(pointer, sizeof(type), 0)
 
 // 2 倍扩容，返回容量
 #define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
@@ -23,6 +30,8 @@
 // 重新分配内存函数，为 0 则代表释放内存
 void *reallocate(void *pointer, size_t oldSize, size_t newSize);
 
+// 释放对象链表的指针
+void freeObjects();
 
 
 #endif //PANDA_MEMORY_H
