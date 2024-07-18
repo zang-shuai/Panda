@@ -14,6 +14,7 @@
 
 VM vm;
 
+// 栈顶指针指向数组底
 static void resetStack() {
     vm.stackTop = vm.stack;
 }
@@ -31,38 +32,49 @@ static void runtimeError(const char *format, ...) {
     resetStack();
 }
 
+// 初始化虚拟机（初始化栈）
 void initVM() {
+    // 初试栈为空
     resetStack();
+    // 对象链初试为空
     vm.objects = NULL;
+    // 初始化 hash 表
     initTable(&vm.strings);
 }
 
 void freeVM() {
+    // 释放 hash 表
     freeTable(&vm.strings);
+    // 释放对象链
     freeObjects();
 }
 
+// 获取当前的 Value ？？？？？？？？？
 static Value peek(int distance) {
     return vm.stackTop[-1 - distance];
 }
 
-// 判断该 value 是否为 nil 或者 false
+// 判断该 value 是否为 nil 或者 false，返回 bool
 static bool isFalsey(Value value) {
     return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
 
 // 连接函数，连接两个字符串
 static void concatenate() {
+    // 从栈顶弹出 2 个值
     ObjString* b = AS_STRING(pop());
     ObjString* a = AS_STRING(pop());
-
+    // 计算总长度
     int length = a->length + b->length;
+    // 重新分配内存
     char* chars = ALLOCATE(char, length + 1);
+    // 拷贝值
     memcpy(chars, a->chars, a->length);
     memcpy(chars + a->length, b->chars, b->length);
     chars[length] = '\0';
-
+    // 获取新的 string 对象
     ObjString* result = takeString(chars, length);
+    // 将新的 C字符串转为 panda 值
     push(OBJ_VAL(result));
 }
 

@@ -13,6 +13,7 @@
 
 #define ALLOCATE_OBJ(type, objectType)  (type*)allocateObject(sizeof(type), objectType)
 
+// 分配一个对象，并传回对象指针
 static Obj *allocateObject(size_t size, ObjType type) {
     Obj *object = (Obj *) reallocate(NULL, 0, size);
     object->type = type;
@@ -31,6 +32,7 @@ static ObjString *allocateString(char *chars, int length,
     tableSet(&vm.strings, string, NIL_VAL);
     return string;
 }
+
 // 取一个字符串和 hash 值
 static uint32_t hashString(const char *key, int length) {
     uint32_t hash = 2166136261u;
@@ -43,7 +45,7 @@ static uint32_t hashString(const char *key, int length) {
 
 ObjString *copyString(const char *chars, int length) {
     uint32_t hash = hashString(chars, length);
-    ObjString* interned = tableFindString(&vm.strings, chars, length,
+    ObjString *interned = tableFindString(&vm.strings, chars, length,
                                           hash);
     if (interned != NULL) return interned;
     char *heapChars = ALLOCATE(char, length + 1);
@@ -63,8 +65,7 @@ void printObject(Value value) {
 ObjString *takeString(char *chars, int length) {
     uint32_t hash = hashString(chars, length);
     // 如果找到了，在返回它之前，我们释放传入的字符串的内存。因为所有权被传递给了这个函数，我们不再需要这个重复的字符串，所以由我们释放它。
-    ObjString* interned = tableFindString(&vm.strings, chars, length,
-                                          hash);
+    ObjString *interned = tableFindString(&vm.strings, chars, length, hash);
     if (interned != NULL) {
         FREE_ARRAY(char, chars, length + 1);
         return interned;

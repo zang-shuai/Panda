@@ -8,18 +8,22 @@
 #include "common.h"
 #include "value.h"
 
+// 返回对象类型
 #define OBJ_TYPE(value)        (AS_OBJ(value)->type)
+// 返回是否为字符串
 #define IS_STRING(value)       isObjType(value, OBJ_STRING)
 // 返回ObjString*
 #define AS_STRING(value)       ((ObjString*)AS_OBJ(value))
 // 返回字符数组本身
 #define AS_CSTRING(value)      (((ObjString*)AS_OBJ(value))->chars)
 
+
+// 对象类型
 typedef enum {
     OBJ_STRING,
 } ObjType;
 
-
+//
 struct Obj {
     ObjType type;
     struct Obj* next;

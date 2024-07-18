@@ -13,7 +13,7 @@
 #include "debug.h"
 
 #endif
-// 转换器，将 token 转为表达式
+// 转换器，将 token 转为表达式，
 typedef struct {
     Token current;
     Token previous;
@@ -22,7 +22,7 @@ typedef struct {
     // 代码出现错误，进入panic模式
     bool panicMode;
 } Parser;
-// 优先排序，越往下，优先级越高
+// 优先排序，越往下，优先级越高，每个符号代表不止一个优先级
 typedef enum {
     PREC_NONE,
     PREC_ASSIGNMENT,  // =
@@ -37,7 +37,7 @@ typedef enum {
     PREC_PRIMARY
 } Precedence;
 
-// 函数指针
+// 函数指针，用于指向
 typedef void (*ParseFn)();
 
 // 规则
@@ -55,6 +55,7 @@ Parser parser;
 
 Chunk *compilingChunk;
 
+// 返回当前的 chunk 指针
 static Chunk *currentChunk() {
     return compilingChunk;
 }
@@ -125,13 +126,15 @@ static void emitReturn() {
     emitByte(OP_RETURN);
 }
 
-// 将 value 放入常量池中
+// 将 value 放入常量池中，返回其位置
 static uint8_t makeConstant(Value value) {
     int constant = addConstant(currentChunk(), value);
+    // 常量池溢出错误
     if (constant > UINT8_MAX) {
         error("Too many constants in one chunk.");
         return 0;
     }
+    // 返回在常量池中的位置
     return (uint8_t) constant;
 }
 
@@ -148,7 +151,7 @@ static ParseRule *getRule(TokenType type);
 
 // 解析前进所得的 token
 static void expression() {
-    // 解析优先级，输入的为 =
+    // 解析优先级，PREC_ASSIGNMENT 为 = 的优先级
     parsePrecedence(PREC_ASSIGNMENT);
 }
 
@@ -160,7 +163,6 @@ static void binary() {
     parsePrecedence((Precedence) (rule->precedence + 1));
 
     switch (operatorType) {
-
         case TOKEN_BANG_EQUAL:
             emitBytes(OP_EQUAL, OP_NOT);
             break;
@@ -226,6 +228,7 @@ static void number() {
     // 将OP_CONSTANT放入 chunk 中，并将 value 放入常量池中
     emitConstant(NUMBER_VAL(value));
 }
+
 // 将字符串加入到常量池中
 static void string() {
     emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
@@ -325,7 +328,8 @@ ParseRule rules[] = {
 static void parsePrecedence(Precedence precedence) {
     // 再前进一步（获取一个 token）
     advance();
-    //  获取指针的前缀函数，为空则表示该符号不能用于前缀
+    printf("xxxxx----parsePrecedence---advance---Parser: %c,%d  %c,%d\n", parser.previous.start[0],parser.previous.length,parser.current.start[0],parser.current.length);
+    //  获取 1 号函数，为空则表示该符号不能用于前缀？
     ParseFn prefixRule = getRule(parser.previous.type)->prefix;
     if (prefixRule == NULL) {
         error("Expect expression.");
@@ -334,9 +338,10 @@ static void parsePrecedence(Precedence precedence) {
     // 执行该函数
     prefixRule();
 
-    //  pre不断前进， 直到大于current，每次前进，advance 一次，前进后获取其中缀的规则并执行
+    //  pre不断前进， 直到 2 号指针指向的优先级不大于当前的优先级
     while (precedence <= getRule(parser.current.type)->precedence) {
         advance();
+        printf("while----parsePrecedence---advance---Parser: %c,%d  %c,%d\n", parser.previous.start[0],parser.previous.length,parser.current.start[0],parser.current.length);
         ParseFn infixRule = getRule(parser.previous.type)->infix;
         infixRule();
     }

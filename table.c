@@ -12,24 +12,27 @@
 
 #define TABLE_MAX_LOAD 0.75
 
+// 初始化 hash 表
 void initTable(Table *table) {
     table->count = 0;
     table->capacity = 0;
     table->entries = NULL;
 }
-
+// 销毁 hash 表
 void freeTable(Table *table) {
     FREE_ARRAY(Entry, table->entries, table->capacity);
     initTable(table);
 }
-
+// 查询要找的 entry，传入为：初试 entry，容量大小，要查找到的 key
 static Entry *findEntry(Entry *entries, int capacity,
                         ObjString *key) {
+    // 获取到该值在哪个索引中
     uint32_t index = key->hash % capacity;
-    Entry* tombstone = NULL;
+    //
+    Entry *tombstone = NULL;
     for (;;) {
         Entry *entry = &entries[index];
-        // 正确处理墓碑
+        // 正确处理墓碑（这个 key 是 null 还是不存在）
         if (entry->key == NULL) {
             if (IS_NIL(entry->value)) {
                 // Empty entry.
@@ -39,7 +42,7 @@ static Entry *findEntry(Entry *entries, int capacity,
                 if (tombstone == NULL) tombstone = entry;
             }
         } else if (entry->key == key) {
-            // We found the key.
+            // 如果找到了 key 就返回
             return entry;
         }
         index = (index + 1) % capacity;
@@ -48,12 +51,15 @@ static Entry *findEntry(Entry *entries, int capacity,
 
 // 调整 hash 容量
 static void adjustCapacity(Table *table, int capacity) {
+    // 在堆上分配一个新数组，然后转为Entry类型，长度为capacity
     Entry *entries = ALLOCATE(Entry, capacity);
+    // 设置初始值
     for (int i = 0; i < capacity; i++) {
         entries[i].key = NULL;
         entries[i].value = NIL_VAL;
     }
     table->count = 0;
+    // 将就 hash 表中的值插入到新的表中
     for (int i = 0; i < table->capacity; i++) {
         Entry *entry = &table->entries[i];
         if (entry->key == NULL) continue;
@@ -93,21 +99,21 @@ void tableAddAll(Table *from, Table *to) {
         }
     }
 }
-
-ObjString* tableFindString(Table* table, const char* chars,
+// 查找表中是否存有该字符串
+ObjString *tableFindString(Table *table, const char *chars,
                            int length, uint32_t hash) {
     if (table->count == 0) return NULL;
 
     uint32_t index = hash % table->capacity;
     for (;;) {
-        Entry* entry = &table->entries[index];
+        Entry *entry = &table->entries[index];
         if (entry->key == NULL) {
-            // Stop if we find an empty non-tombstone entry.
+            // 遇到墓碑则返回空
             if (IS_NIL(entry->value)) return NULL;
         } else if (entry->key->length == length &&
                    entry->key->hash == hash &&
                    memcmp(entry->key->chars, chars, length) == 0) {
-            // We found it.
+            // 找到字符串
             return entry->key;
         }
 
@@ -115,25 +121,29 @@ ObjString* tableFindString(Table* table, const char* chars,
     }
 }
 
-// 查询值
-bool tableGet(Table* table, ObjString* key, Value* value) {
+// 检索值，将查到的值存入 value 中
+bool tableGet(Table *table, ObjString *key, Value *value) {
+    // 如果表为空，则返回 false
     if (table->count == 0) return false;
+    // 找到目前是否已经存在这个 key
+    Entry *entry = findEntry(table->entries, table->capacity, key);
 
-    Entry* entry = findEntry(table->entries, table->capacity, key);
+    // 如果没有找到，则返回错误
     if (entry->key == NULL) return false;
 
     *value = entry->value;
     return true;
 }
-
-bool tableDelete(Table* table, ObjString* key) {
+// 删除表中的 key 元素
+bool tableDelete(Table *table, ObjString *key) {
     if (table->count == 0) return false;
 
-    // Find the entry.
-    Entry* entry = findEntry(table->entries, table->capacity, key);
+    // 找到这个 entry
+    Entry *entry = findEntry(table->entries, table->capacity, key);
+    // 如果没有找到则返回 false
     if (entry->key == NULL) return false;
 
-    // Place a tombstone in the entry.
+    // 将该值替换为一个墓碑
     entry->key = NULL;
     entry->value = BOOL_VAL(true);
     return true;
