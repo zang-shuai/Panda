@@ -19,6 +19,7 @@ typedef struct {
     // 虚拟机栈
     Value stack[STACK_MAX];
     Value *stackTop;
+    Table globals;
     Table strings;
     // 对象链
     Obj* objects;

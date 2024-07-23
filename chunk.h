@@ -16,11 +16,16 @@ typedef enum {
     OP_NIL,
     OP_TRUE,
     OP_FALSE,
+    OP_POP,
+    OP_GET_GLOBAL,
+    OP_DEFINE_GLOBAL,
 // 一元指令，取反指令
+    OP_SET_GLOBAL,
     OP_EQUAL,
     OP_GREATER,
     OP_LESS,
     OP_NEGATE,
+    OP_PRINT,
 //    +-*/二元指令
     OP_ADD,
     OP_SUBTRACT,
