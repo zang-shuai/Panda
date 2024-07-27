@@ -12,4 +12,5 @@
 #define DEBUG_TRACE_EXECUTION
 // 调试打印代码
 #define DEBUG_PRINT_CODE
+#define UINT8_COUNT (UINT8_MAX + 1)
 #endif //PANDA_COMMON_H
