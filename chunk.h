@@ -28,6 +28,13 @@ typedef enum {
     OP_LESS,
     OP_NEGATE,
     OP_PRINT,
+    // 跳转操作
+    // 栈顶为 false 时跳转
+    OP_JUMP_IF_FALSE,
+    // 向前跳转
+    OP_JUMP,
+    // 向后跳转
+    OP_LOOP,
 //    +-*/二元指令
     OP_ADD,
     OP_SUBTRACT,

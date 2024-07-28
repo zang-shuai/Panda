@@ -87,6 +87,11 @@ static InterpretResult run() {
 #define READ_BYTE() (*vm.ip++)
 // 读取常量指令，返回读取到的常量
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+
+#define READ_SHORT() \
+    (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
+
+// 它从字节码块中抽取接下来的两个字节，并从中构建出一个16位无符号整数。
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 // 二元指令操作宏，从栈中取出 2 个操作符号，进行二元运算
 #define BINARY_OP(valueType, op) \
@@ -236,7 +241,21 @@ static InterpretResult run() {
                 printf("\n");
                 break;
             }
-
+            case OP_JUMP: {
+                uint16_t offset = READ_SHORT();
+                vm.ip += offset;
+                break;
+            }
+            case OP_JUMP_IF_FALSE: {
+                uint16_t offset = READ_SHORT();
+                if (isFalsey(peek(0))) vm.ip += offset;
+                break;
+            }
+            case OP_LOOP: {
+                uint16_t offset = READ_SHORT();
+                vm.ip -= offset;
+                break;
+            }
             case OP_RETURN: {
 //                printValue(pop());
 //                printf("\n");
@@ -249,6 +268,7 @@ static InterpretResult run() {
 #undef READ_CONSTANT
 #undef BINARY_OP
 #undef READ_STRING
+#undef READ_SHORT
 }
 
 // 启动解释器
