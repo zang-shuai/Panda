@@ -5,7 +5,9 @@
 #ifndef PANDA_VALUE_H
 #define PANDA_VALUE_H
 
+#include <string.h>
 #include "common.h"
+
 typedef struct Obj Obj;
 typedef struct ObjString ObjString;
 
@@ -21,7 +23,7 @@ typedef struct {
     union {
         bool boolean;
         double number;
-        Obj* obj;
+        Obj *obj;
     } as;
 } Value;
 

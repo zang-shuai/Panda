@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <time.h>
 #include "object.h"
 #include "memory.h"
 #include "compiler.h"
@@ -14,10 +15,16 @@
 
 VM vm;
 
+static Value clockNative(int argCount, Value *args) {
+    return NUMBER_VAL((double) clock() / CLOCKS_PER_SEC);
+}
+
 // 栈顶指针指向数组底
 static void resetStack() {
     vm.stackTop = vm.stack;
+    vm.frameCount = 0;
 }
+
 
 static void runtimeError(const char *format, ...) {
     va_list args;
@@ -26,10 +33,27 @@ static void runtimeError(const char *format, ...) {
     va_end(args);
     fputs("\n", stderr);
 
-    size_t instruction = vm.ip - vm.chunk->code - 1;
-    int line = vm.chunk->lines[instruction];
-    fprintf(stderr, "[line %d] in script\n", line);
+    for (int i = vm.frameCount - 1; i >= 0; i--) {
+        CallFrame *frame = &vm.frames[i];
+        ObjFunction *function = frame->function;
+        size_t instruction = frame->ip - function->chunk.code - 1;
+        fprintf(stderr, "[line %d] in ",
+                function->chunk.lines[instruction]);
+        if (function->name == NULL) {
+            fprintf(stderr, "script\n");
+        } else {
+            fprintf(stderr, "%s()\n", function->name->chars);
+        }
+    }
     resetStack();
+}
+
+static void defineNative(const char *name, NativeFn function) {
+    push(OBJ_VAL(copyString(name, (int) strlen(name))));
+    push(OBJ_VAL(newNative(function)));
+    tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
+    pop();
+    pop();
 }
 
 // 初始化虚拟机（初始化栈）
@@ -41,6 +65,7 @@ void initVM() {
     initTable(&vm.globals);
     // 初始化 hash 表
     initTable(&vm.strings);
+    defineNative("clock", clockNative);
 }
 
 void freeVM() {
@@ -54,6 +79,42 @@ void freeVM() {
 // 获取当前的 Value ？？？？？？？？？
 static Value peek(int distance) {
     return vm.stackTop[-1 - distance];
+}
+
+static bool call(ObjFunction *function, int argCount) {
+    if (argCount != function->arity) {
+        runtimeError("Expected %d arguments but got %d.（没有得到期望数量的参数）", function->arity, argCount);
+        return false;
+    }
+    if (vm.frameCount == FRAMES_MAX) {
+        runtimeError("Stack overflow.（栈溢出/函数调用过多）");
+        return false;
+    }
+    CallFrame *frame = &vm.frames[vm.frameCount++];
+    frame->function = function;
+    frame->ip = function->chunk.code;
+    frame->slots = vm.stackTop - argCount - 1;
+    return true;
+}
+
+static bool callValue(Value callee, int argCount) {
+    if (IS_OBJ(callee)) {
+        switch (OBJ_TYPE(callee)) {
+            case OBJ_FUNCTION:
+                return call(AS_FUNCTION(callee), argCount);
+            case OBJ_NATIVE: {
+                NativeFn native = AS_NATIVE(callee);
+                Value result = native(argCount, vm.stackTop - argCount);
+                vm.stackTop -= argCount + 1;
+                push(result);
+                return true;
+            }
+            default:
+                break; // Non-callable object type.
+        }
+    }
+    runtimeError("Can only call functions and classes.");
+    return false;
 }
 
 // 判断该 value 是否为 nil 或者 false，返回 bool
@@ -82,14 +143,14 @@ static void concatenate() {
 
 // 运行指令集，返回解释结果
 static InterpretResult run() {
-
+    CallFrame *frame = &vm.frames[vm.frameCount - 1];
 // 返回当前chunk 值，并将指针后移一位
-#define READ_BYTE() (*vm.ip++)
-// 读取常量指令，返回读取到的常量
-#define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+#define READ_BYTE() (*frame->ip++)
 
-#define READ_SHORT() \
-    (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
+#define READ_SHORT() (frame->ip += 2,(uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
+// 读取常量指令，返回读取到的常量
+#define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
+
 
 // 它从字节码块中抽取接下来的两个字节，并从中构建出一个16位无符号整数。
 #define READ_STRING() AS_STRING(READ_CONSTANT())
@@ -97,7 +158,7 @@ static InterpretResult run() {
 #define BINARY_OP(valueType, op) \
     do { \
       if (!IS_NUMBER(peek(0)) || !IS_NUMBER(peek(1))) { \
-        runtimeError("Operands must be numbers."); \
+        runtimeError("Operands must be numbers.（比较的值必须是字符串）"); \
         return INTERPRET_RUNTIME_ERROR; \
       } \
       double b = AS_NUMBER(pop()); \
@@ -110,8 +171,9 @@ static InterpretResult run() {
 #ifdef DEBUG_TRACE_EXECUTION
         // 输出当前块的信息
 
-        disassembleInstruction(vm.chunk,
-                               (int) (vm.ip - vm.chunk->code));
+        disassembleInstruction(&frame->function->chunk,
+                               (int) (frame->ip - frame->function->chunk.code));
+
         // 栈跟踪代码，输出此时虚拟机栈的各种信息
         printf("          ");
 
@@ -121,7 +183,11 @@ static InterpretResult run() {
             printf(" ]");
 
         }
+
         printf("\n");
+        // 函数信息
+        disassembleInstruction(&frame->function->chunk,
+                               (int) (frame->ip - frame->function->chunk.code));
 #endif
         uint8_t instruction;
 
@@ -136,25 +202,38 @@ static InterpretResult run() {
                 // 打印该常量
                 break;
             }
+                // 将 nil 值加入到栈中
             case OP_NIL:
                 push(NIL_VAL);
                 break;
+                // 将 true 值加入到栈中
             case OP_TRUE:
                 push(BOOL_VAL(true));
                 break;
+                // 将 false 值加入到栈中
             case OP_FALSE:
                 push(BOOL_VAL(false));
                 break;
-            case OP_SET_LOCAL: {
+                // 读取局部变量，加入到栈中
+            case OP_GET_LOCAL: {
+                // (*frame->ip++)
                 uint8_t slot = READ_BYTE();
-                vm.stack[slot] = peek(0);
+                push(frame->slots[slot]);
                 break;
             }
+                // 设置变量值，将栈顶值加入到 value 池中的合适的位置
+            case OP_SET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                frame->slots[slot] = peek(0);
+                break;
+            }
+                // 从 hash 表中查找全局变量，并插入
             case OP_GET_GLOBAL: {
+                // 读取字符串，字符串为全局变量名
                 ObjString *name = READ_STRING();
                 Value value;
                 if (!tableGet(&vm.globals, name, &value)) {
-                    runtimeError("Undefined variable '%s'.", name->chars);
+                    runtimeError("Undefined variable '%s'.（没有定义该全局变量）", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 push(value);
@@ -163,11 +242,6 @@ static InterpretResult run() {
             case OP_POP:
                 pop();
                 break;
-            case OP_GET_LOCAL: {
-                uint8_t slot = READ_BYTE();
-                push(vm.stack[slot]);
-                break;
-            }
             case OP_DEFINE_GLOBAL: {
                 ObjString *name = READ_STRING();
                 tableSet(&vm.globals, name, peek(0));
@@ -178,7 +252,7 @@ static InterpretResult run() {
                 ObjString *name = READ_STRING();
                 if (tableSet(&vm.globals, name, peek(0))) {
                     tableDelete(&vm.globals, name);
-                    runtimeError("Undefined variable '%s'.", name->chars);
+                    runtimeError("Undefined variable '%s'.（没有定义该全局变量）", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 break;
@@ -241,25 +315,52 @@ static InterpretResult run() {
                 printf("\n");
                 break;
             }
+            // 向前跳转
             case OP_JUMP: {
                 uint16_t offset = READ_SHORT();
-                vm.ip += offset;
+                frame->ip += offset;
                 break;
             }
+            // 为 false 则跳转
             case OP_JUMP_IF_FALSE: {
                 uint16_t offset = READ_SHORT();
-                if (isFalsey(peek(0))) vm.ip += offset;
+                if (isFalsey(peek(0))) frame->ip += offset;
                 break;
             }
+            // 反向跳转
             case OP_LOOP: {
                 uint16_t offset = READ_SHORT();
-                vm.ip -= offset;
+                frame->ip -= offset;
                 break;
             }
+            // 调用函数
+            case OP_CALL: {
+                // 获取参数数量
+                int argCount = READ_BYTE();
+                if (!callValue(peek(argCount), argCount)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
+            //
             case OP_RETURN: {
-//                printValue(pop());
-//                printf("\n");
-                return INTERPRET_OK;
+                Value result = pop();
+                // 函数减一
+                vm.frameCount--;
+
+                // 如果函数减完了，说明程序结束
+                if (vm.frameCount == 0) {
+                    pop();
+                    return INTERPRET_OK;
+                }
+
+                // 程序没有结束，将返回值插入栈中，修改当前帧
+                vm.stackTop = frame->slots;
+                push(result);
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+//                return INTERPRET_OK;
             }
         }
 
@@ -273,25 +374,21 @@ static InterpretResult run() {
 
 // 启动解释器
 InterpretResult interpret(const char *source) {
-    // 为解释器赋予 chunk
-    Chunk chunk;
-    initChunk(&chunk);
-    // 编译 source文件，编译结果放入chunk中
-    if (!compile(source, &chunk)) {
-        freeChunk(&chunk);
+    // 编译该文件，并返回编译完后的函数对象
+    ObjFunction *function = compile(source);
+//    exit(0);
+    if (function == NULL)
         return INTERPRET_COMPILE_ERROR;
-    }
-    // 将 chunk 交予虚拟机
-    vm.chunk = &chunk;
-    vm.ip = vm.chunk->code;
 
-    // 获取程序的解释结果
-    InterpretResult result = run();
+    push(OBJ_VAL(function));
 
-    // 释放 chunk
-    freeChunk(&chunk);
-    // 返回结果
-    return result;
+    CallFrame *frame = &vm.frames[vm.frameCount++];
+    frame->function = function;
+    frame->ip = function->chunk.code;
+    frame->slots = vm.stack;
+
+    call(function, 0);
+    return run();
 }
 
 void push(Value value) {

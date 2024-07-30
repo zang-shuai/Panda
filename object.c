@@ -33,6 +33,23 @@ static ObjString *allocateString(char *chars, int length,
     return string;
 }
 
+// 新建一个函数
+ObjFunction *newFunction() {
+    ObjFunction *function = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
+    // 参数数量为 0
+    function->arity = 0;
+    // 无名
+    function->name = NULL;
+    initChunk(&function->chunk);
+    return function;
+}
+
+ObjNative *newNative(NativeFn function) {
+    ObjNative *native = ALLOCATE_OBJ(ObjNative, OBJ_NATIVE);
+    native->function = function;
+    return native;
+}
+
 // 取一个字符串和 hash 值
 static uint32_t hashString(const char *key, int length) {
     uint32_t hash = 2166136261u;
@@ -54,10 +71,25 @@ ObjString *copyString(const char *chars, int length) {
     return allocateString(heapChars, length, hash);
 }
 
+// 输出函数
+static void printFunction(ObjFunction *function) {
+    if (function->name == NULL) {
+        printf("<script>");
+        return;
+    }
+    printf("<fn %s>", function->name->chars);
+}
+
 void printObject(Value value) {
     switch (OBJ_TYPE(value)) {
+        case OBJ_FUNCTION:
+            printFunction(AS_FUNCTION(value));
+            break;
         case OBJ_STRING:
             printf("%s", AS_CSTRING(value));
+            break;
+        case OBJ_NATIVE:
+            printf("<native fn>");
             break;
     }
 }

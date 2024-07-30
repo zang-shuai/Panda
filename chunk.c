@@ -5,9 +5,6 @@
 #include "chunk.h"
 #include "memory.h"
 
-#define GROW_ARRAY(type, pointer, oldCount, newCount) \
-    (type*)reallocate(pointer, sizeof(type) * (oldCount), \
-        sizeof(type) * (newCount))
 
 
 void initChunk(Chunk *chunk) {

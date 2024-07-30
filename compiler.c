@@ -2,12 +2,20 @@
 // Created by 臧帅 on 24-7-14.
 //
 
-#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "common.h"
 #include "compiler.h"
+#include "memory.h"
 #include "scanner.h"
-#include "chunk.h"
+
+//#include <stdbool.h>
+//#include <stdio.h>
+//#include <string.h>
+//#include "compiler.h"
+//#include "scanner.h"
+//#include "chunk.h"
 
 #ifdef DEBUG_PRINT_CODE
 
@@ -59,10 +67,30 @@ typedef struct {
     Token name;
     // 变量深度、同一深度的变量在同一个代码块中
     int depth;
+    bool isCaptured;
+
 } Local;
 
+// 函数类型，区分它在编译顶层代码还是函数主体
+typedef enum {
+    // 普通函数
+    TYPE_FUNCTION,
+    // 构造函数
+    TYPE_INITIALIZER,
+    // 方法
+    TYPE_METHOD,
+    // 主函数
+    TYPE_SCRIPT
+} FunctionType;
+
 // 局部变量池，记录同一深度下的所有局部变量
-typedef struct {
+
+typedef struct Compiler {
+    struct Compiler *enclosing;
+    // 函数数组
+    ObjFunction *function;
+    // 函数类型
+    FunctionType type;
     Local locals[UINT8_COUNT];
     // 局部变量数量
     int localCount;
@@ -80,12 +108,14 @@ Parser parser;
 // 默认初试状态的指针为 1
 Compiler *current = NULL;
 
-Chunk *compilingChunk;
+
+//Chunk *compilingChunk;
 
 // 返回当前的 chunk 指针
 static Chunk *currentChunk() {
-    return compilingChunk;
+    return &current->function->chunk;
 }
+
 
 // 编译错误处理过程，输出错误信息
 static void errorAt(Token *token, const char *message) {
@@ -183,6 +213,17 @@ static void emitLoop(int loopStart) {
 
 // 将 OP_RETURN 写入 chunk 中
 static void emitReturn() {
+/* Calls and Functions return-nil < Methods and Initializers return-this
+  emitByte(OP_NIL);
+*/
+//> Methods and Initializers return-this
+    if (current->type == TYPE_INITIALIZER) {
+        emitBytes(OP_GET_LOCAL, 0);
+    } else {
+        emitByte(OP_NIL);
+    }
+
+//< Methods and Initializers return-this
     emitByte(OP_RETURN);
 }
 
@@ -217,13 +258,31 @@ static void patchJump(int offset) {
     currentChunk()->code[offset + 1] = jump & 0xff;
 }
 
-// 初始化常量编译器
-static void initCompiler(Compiler *compiler) {
+// 初始化变量池量+函数编译器
+static void initCompiler(Compiler *compiler, FunctionType type) {
+    compiler->enclosing = current;
+    compiler->function = NULL;
+    compiler->type = type;
     // 初试变量数量为 0
     compiler->localCount = 0;
     // 初试深度为 0
     compiler->scopeDepth = 0;
+    compiler->function = newFunction();
     current = compiler;
+    if (type != TYPE_SCRIPT) {
+        current->function->name = copyString(parser.previous.start, parser.previous.length);
+    }
+    Local *local = &current->locals[current->localCount++];
+    local->depth = 0;
+//    local->name.start = "";
+//    local->name.length = 0;
+    if (type != TYPE_FUNCTION) {
+        local->name.start = "this";
+        local->name.length = 4;
+    } else {
+        local->name.start = "";
+        local->name.length = 0;
+    }
 }
 
 // 传入优先级，转换表达式
@@ -305,6 +364,7 @@ static uint8_t parseVariable(const char *errorMessage) {
 
 // 变量池中增加 1 个变量，变量深度为当前深度
 static void markInitialized() {
+    if (current->scopeDepth == 0) return;
     current->locals[current->localCount - 1].depth =
             current->scopeDepth;
 }
@@ -318,6 +378,27 @@ static void defineVariable(uint8_t global) {
     }
     // 如果为全局变量则直接插入，
     emitBytes(OP_DEFINE_GLOBAL, global);
+}
+
+// 解析前进所得的 token
+static void expression() {
+    // 解析优先级，PREC_ASSIGNMENT 为 = 的优先级
+    parsePrecedence(PREC_ASSIGNMENT);
+}
+
+static uint8_t argumentList() {
+    uint8_t argCount = 0;
+    if (!check(TOKEN_RIGHT_PAREN)) {
+        do {
+            expression();
+            if (argCount == 255) {
+                error("Can't have more than 255 arguments.（参数不能超过 255 个）");
+            }
+            argCount++;
+        } while (match(TOKEN_COMMA));
+    }
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after arguments.（缺少反括号）");
+    return argCount;
 }
 
 static void and_(bool canAssign) {
@@ -347,12 +428,6 @@ static void declaration();
 static ParseRule *getRule(TokenType type);
 
 
-// 解析前进所得的 token
-static void expression() {
-    // 解析优先级，PREC_ASSIGNMENT 为 = 的优先级
-    parsePrecedence(PREC_ASSIGNMENT);
-}
-
 // 处理代码块
 static void block() {
     // 当代码块没有结束，且文件没有结束时，进行处理
@@ -361,6 +436,52 @@ static void block() {
     }
     // 处理完代码块，消耗掉}
     consume(TOKEN_RIGHT_BRACE, "Expect '}' after block.(代码块结束，但是缺少})");
+}
+
+// 结束编译
+static ObjFunction *endCompiler() {
+    // 加入返回
+    emitReturn();
+    ObjFunction *function = current->function;
+#ifdef DEBUG_PRINT_CODE
+    if (!parser.hadError) {
+        disassembleChunk(currentChunk(), function->name != NULL
+                                         ? function->name->chars : "<script>");
+    }
+#endif
+    current = current->enclosing;
+    return function;
+}
+
+static void function(FunctionType type) {
+    Compiler compiler;
+    initCompiler(&compiler, type);
+    beginScope();
+
+    consume(TOKEN_LEFT_PAREN, "Expect '(' after function name.");
+    if (!check(TOKEN_RIGHT_PAREN)) {
+        do {
+            current->function->arity++;
+            if (current->function->arity > 255) {
+                errorAtCurrent("Can't have more than 255 parameters.");
+            }
+            uint8_t constant = parseVariable("Expect parameter name.");
+            defineVariable(constant);
+        } while (match(TOKEN_COMMA));
+    }
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after parameters.");
+    consume(TOKEN_LEFT_BRACE, "Expect '{' before function body.");
+    block();
+
+    ObjFunction *function = endCompiler();
+    emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
+}
+
+static void funDeclaration() {
+    uint8_t global = parseVariable("Expect function name.");
+    markInitialized();
+    function(TYPE_FUNCTION);
+    defineVariable(global);
 }
 
 // 处理定义变量的过程（全局变量和局部变量）
@@ -467,6 +588,28 @@ static void printStatement() {
     emitByte(OP_PRINT);
 }
 
+// 返回语句
+static void returnStatement() {
+
+    if (current->type == TYPE_SCRIPT) {
+        error("Can't return from top-level code.（主函数无法返回值）");
+    }
+    // 如果直接返回分号，则返回空
+    if (match(TOKEN_SEMICOLON)) {
+        emitReturn();
+    } else {
+        if (current->type == TYPE_INITIALIZER) {
+            error("Can't return a value from an initializer.（构造函数无法返回）");
+        }
+
+        expression();
+
+        consume(TOKEN_SEMICOLON, "Expect ';' after return value.（缺少；）");
+        emitByte(OP_RETURN);
+
+    }
+}
+
 // 解析 while 语句
 static void whileStatement() {
 
@@ -514,9 +657,16 @@ static void synchronize() {
 // 开始解析已经读到的 Token
 static void declaration() {
     // 判断是否为定义变量（全局和局部均可）
-    if (match(TOKEN_VAR)) {
+    if (match(TOKEN_FUN)) {
+        funDeclaration();
+    } else if (match(TOKEN_VAR)) {
         varDeclaration();
-    } // 判断是否为左括号
+    } else if (match(TOKEN_RETURN)) {
+
+        returnStatement();
+
+    }
+        // 判断是否为左括号
     else if (match(TOKEN_WHILE)) {
         whileStatement();
     } else if (match(TOKEN_LEFT_BRACE)) {
@@ -539,13 +689,15 @@ static void statement() {
     if (match(TOKEN_PRINT)) {
         printStatement();
     }
-        // 处理 if 语句
-    else if (match(TOKEN_IF)) {
-        ifStatement();
-    }
         // 处理 for 语句
     else if (match(TOKEN_FOR)) {
         forStatement();
+    }
+        // 处理 if 语句
+    else if (match(TOKEN_IF)) {
+        ifStatement();
+    } else if (match(TOKEN_RETURN)) {
+        returnStatement();
     }
         // 处理while 语句
     else if (match(TOKEN_WHILE)) {
@@ -604,6 +756,11 @@ static void binary(bool canAssign) {
         default:
             return; // Unreachable.
     }
+}
+
+static void call(bool canAssign) {
+    uint8_t argCount = argumentList();
+    emitBytes(OP_CALL, argCount);
 }
 
 // 判断前置标识符的类型
@@ -697,7 +854,7 @@ static void unary(bool canAssign) {
 // 转换规则
 ParseRule rules[] = {
         // (
-        [TOKEN_LEFT_PAREN]    = {grouping, NULL, PREC_NONE},
+        [TOKEN_LEFT_PAREN]    = {grouping, call, PREC_CALL},
         // ）
         [TOKEN_RIGHT_PAREN]   = {NULL, NULL, PREC_NONE},
         // {}
@@ -720,7 +877,7 @@ ParseRule rules[] = {
         // !
         [TOKEN_BANG]          = {unary, NULL, PREC_NONE},
         // !=
-        [TOKEN_BANG_EQUAL]    = {NULL,     binary, PREC_EQUALITY},
+        [TOKEN_BANG_EQUAL]    = {NULL, binary, PREC_EQUALITY},
         // =
         [TOKEN_EQUAL]         = {NULL, NULL, PREC_NONE},
         // ==
@@ -791,15 +948,6 @@ static ParseRule *getRule(TokenType type) {
 }
 
 
-static void endCompiler() {
-    emitReturn();
-#ifdef DEBUG_PRINT_CODE
-    if (!parser.hadError) {
-        disassembleChunk(currentChunk(), "code");
-    }
-#endif
-}
-
 // 开始解析大括号，深度加一
 static void beginScope() {
     current->scopeDepth++;
@@ -816,12 +964,14 @@ static void endScope() {
 }
 
 // 将文件转为chunk
-bool compile(const char *source, Chunk *chunk) {
+ObjFunction *compile(const char *source) {
     // 初始化扫描仪
     initScanner(source);
+    // 定义一个编译器（内有变量池）
     Compiler compiler;
-    initCompiler(&compiler);
-    compilingChunk = chunk;
+    // 初始化编译器
+    initCompiler(&compiler, TYPE_SCRIPT);
+//     compilingChunk = chunk;
     // 初试状态无错误
     parser.hadError = false;
     parser.panicMode = false;
@@ -838,8 +988,6 @@ bool compile(const char *source, Chunk *chunk) {
         declaration();
     }
 
-    // 结束编译
-    endCompiler();
-    // 返回是否编译成功
-    return !parser.hadError;
+    ObjFunction *function = endCompiler();
+    return parser.hadError ? NULL : function;
 }

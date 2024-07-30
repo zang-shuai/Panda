@@ -6,20 +6,39 @@
 #define PANDA_VM_H
 
 #include "chunk.h"
-#include "value.h"
+//#include "value.h"
+#include "object.h"
 #include "table.h"
 
-#define STACK_MAX 256
+#define FRAMES_MAX 64
+#define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
+// 函数调用
+typedef struct {
+    // 指向函数对象的指针
+    ObjFunction* function;
+    // chunk 指向的位置
+    uint8_t* ip;
+    // 数组，里面存储局部变量（全局变量在常量池中）
+    Value* slots;
+} CallFrame;
+
 // 虚拟机
 typedef struct {
     // 指向指令集
     Chunk *chunk;
     // 指向当前指令的位置（指令指针）
     uint8_t *ip;
+    // 函数调用帧、每个函数有一个
+    CallFrame frames[FRAMES_MAX];
+    // 帧数量，（函数数量）
+    int frameCount;
+
     // 虚拟机栈
     Value stack[STACK_MAX];
     Value *stackTop;
+    // 全局变量 hash 表
     Table globals;
+    // 字符串 hash 表
     Table strings;
     // 对象链
     Obj* objects;
