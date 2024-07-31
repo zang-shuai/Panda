@@ -33,11 +33,26 @@ static ObjString *allocateString(char *chars, int length,
     return string;
 }
 
+// 新建闭包
+ObjClosure *newClosure(ObjFunction *function) {
+    ObjUpvalue **upvalues = ALLOCATE(ObjUpvalue*,
+                                     function->upvalueCount);
+    for (int i = 0; i < function->upvalueCount; i++) {
+        upvalues[i] = NULL;
+    }
+    ObjClosure *closure = ALLOCATE_OBJ(ObjClosure, OBJ_CLOSURE);
+    closure->function = function;
+    closure->upvalues = upvalues;
+    closure->upvalueCount = function->upvalueCount;
+    return closure;
+}
+
 // 新建一个函数
 ObjFunction *newFunction() {
     ObjFunction *function = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
     // 参数数量为 0
     function->arity = 0;
+    function->upvalueCount = 0;
     // 无名
     function->name = NULL;
     initChunk(&function->chunk);
@@ -80,13 +95,28 @@ static void printFunction(ObjFunction *function) {
     printf("<fn %s>", function->name->chars);
 }
 
+ObjUpvalue *newUpvalue(Value *slot) {
+    ObjUpvalue *upvalue = ALLOCATE_OBJ(ObjUpvalue, OBJ_UPVALUE);
+    upvalue->closed = NIL_VAL;
+    upvalue->location = slot;
+    upvalue->next = NULL;
+    return upvalue;
+}
+
 void printObject(Value value) {
     switch (OBJ_TYPE(value)) {
+        // 输出闭包对象
+        case OBJ_CLOSURE:
+            printFunction(AS_CLOSURE(value)->function);
+            break;
         case OBJ_FUNCTION:
             printFunction(AS_FUNCTION(value));
             break;
         case OBJ_STRING:
             printf("%s", AS_CSTRING(value));
+            break;
+        case OBJ_UPVALUE:
+            printf("upvalue");
             break;
         case OBJ_NATIVE:
             printf("<native fn>");

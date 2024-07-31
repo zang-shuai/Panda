@@ -15,7 +15,7 @@
 // 函数调用
 typedef struct {
     // 指向函数对象的指针
-    ObjFunction* function;
+    ObjClosure* closure;
     // chunk 指向的位置
     uint8_t* ip;
     // 数组，里面存储局部变量（全局变量在常量池中）
@@ -40,6 +40,8 @@ typedef struct {
     Table globals;
     // 字符串 hash 表
     Table strings;
+    //
+    ObjUpvalue* openUpvalues;
     // 对象链
     Obj* objects;
 } VM;

@@ -22,6 +22,12 @@ typedef enum {
 
     OP_SET_LOCAL,
     OP_GET_LOCAL,
+    OP_GET_UPVALUE,
+    OP_SET_UPVALUE,
+    // 闭包销毁上值
+    OP_CLOSE_UPVALUE,
+    // 闭包
+    OP_CLOSURE,
 
     // 设置、读取、定义全局变量
     OP_SET_GLOBAL,

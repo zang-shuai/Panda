@@ -23,6 +23,7 @@ static Value clockNative(int argCount, Value *args) {
 static void resetStack() {
     vm.stackTop = vm.stack;
     vm.frameCount = 0;
+    vm.openUpvalues = NULL;
 }
 
 
@@ -35,7 +36,7 @@ static void runtimeError(const char *format, ...) {
 
     for (int i = vm.frameCount - 1; i >= 0; i--) {
         CallFrame *frame = &vm.frames[i];
-        ObjFunction *function = frame->function;
+        ObjFunction *function = frame->closure->function;
         size_t instruction = frame->ip - function->chunk.code - 1;
         fprintf(stderr, "[line %d] in ",
                 function->chunk.lines[instruction]);
@@ -81,18 +82,17 @@ static Value peek(int distance) {
     return vm.stackTop[-1 - distance];
 }
 
-static bool call(ObjFunction *function, int argCount) {
-    if (argCount != function->arity) {
-        runtimeError("Expected %d arguments but got %d.（没有得到期望数量的参数）", function->arity, argCount);
-        return false;
+static bool call(ObjClosure *closure, int argCount) {
+    if (argCount != closure->function->arity) {
+        runtimeError("Expected %d arguments but got %d.(函数参数数量错误)", closure->function->arity, argCount);
     }
     if (vm.frameCount == FRAMES_MAX) {
         runtimeError("Stack overflow.（栈溢出/函数调用过多）");
         return false;
     }
     CallFrame *frame = &vm.frames[vm.frameCount++];
-    frame->function = function;
-    frame->ip = function->chunk.code;
+    frame->closure = closure;
+    frame->ip = closure->function->chunk.code;
     frame->slots = vm.stackTop - argCount - 1;
     return true;
 }
@@ -100,8 +100,9 @@ static bool call(ObjFunction *function, int argCount) {
 static bool callValue(Value callee, int argCount) {
     if (IS_OBJ(callee)) {
         switch (OBJ_TYPE(callee)) {
-            case OBJ_FUNCTION:
-                return call(AS_FUNCTION(callee), argCount);
+            // OBJ_CLOSURE包装了所有函数，因此不再需要OBJ_FUNCTION
+            case OBJ_CLOSURE:
+                return call(AS_CLOSURE(callee), argCount);
             case OBJ_NATIVE: {
                 NativeFn native = AS_NATIVE(callee);
                 Value result = native(argCount, vm.stackTop - argCount);
@@ -115,6 +116,42 @@ static bool callValue(Value callee, int argCount) {
     }
     runtimeError("Can only call functions and classes.");
     return false;
+}
+
+static ObjUpvalue *captureUpvalue(Value *local) {
+    // 跟踪开放的上值
+    ObjUpvalue *prevUpvalue = NULL;
+    ObjUpvalue *upvalue = vm.openUpvalues;
+    // 我们停止时的局部变量槽是我们要找的槽
+    // 我们找不到需要搜索的上值了
+    // 我们找到了一个上值，其局部变量槽低于我们正查找的槽位
+    while (upvalue != NULL && upvalue->location > local) {
+        prevUpvalue = upvalue;
+        upvalue = upvalue->next;
+    }
+
+    if (upvalue != NULL && upvalue->location == local) {
+        return upvalue;
+    }
+    ObjUpvalue *createdUpvalue = newUpvalue(local);
+    createdUpvalue->next = upvalue;
+    // 跟踪开放的上值
+    if (prevUpvalue == NULL) {
+        vm.openUpvalues = createdUpvalue;
+    } else {
+        prevUpvalue->next = createdUpvalue;
+    }
+    return createdUpvalue;
+}
+
+static void closeUpvalues(Value *last) {
+    while (vm.openUpvalues != NULL &&
+           vm.openUpvalues->location >= last) {
+        ObjUpvalue *upvalue = vm.openUpvalues;
+        upvalue->closed = *upvalue->location;
+        upvalue->location = &upvalue->closed;
+        vm.openUpvalues = upvalue->next;
+    }
 }
 
 // 判断该 value 是否为 nil 或者 false，返回 bool
@@ -149,7 +186,7 @@ static InterpretResult run() {
 
 #define READ_SHORT() (frame->ip += 2,(uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
 // 读取常量指令，返回读取到的常量
-#define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
+#define READ_CONSTANT() (frame->closure->function->chunk.constants.values[READ_BYTE()])
 
 
 // 它从字节码块中抽取接下来的两个字节，并从中构建出一个16位无符号整数。
@@ -171,9 +208,6 @@ static InterpretResult run() {
 #ifdef DEBUG_TRACE_EXECUTION
         // 输出当前块的信息
 
-        disassembleInstruction(&frame->function->chunk,
-                               (int) (frame->ip - frame->function->chunk.code));
-
         // 栈跟踪代码，输出此时虚拟机栈的各种信息
         printf("          ");
 
@@ -186,8 +220,8 @@ static InterpretResult run() {
 
         printf("\n");
         // 函数信息
-        disassembleInstruction(&frame->function->chunk,
-                               (int) (frame->ip - frame->function->chunk.code));
+        disassembleInstruction(&frame->closure->function->chunk,
+                               (int) (frame->ip - frame->closure->function->chunk.code));
 #endif
         uint8_t instruction;
 
@@ -257,7 +291,16 @@ static InterpretResult run() {
                 }
                 break;
             }
-
+            case OP_GET_UPVALUE: {
+                uint8_t slot = READ_BYTE();
+                push(*frame->closure->upvalues[slot]->location);
+                break;
+            }
+            case OP_SET_UPVALUE: {
+                uint8_t slot = READ_BYTE();
+                *frame->closure->upvalues[slot]->location = peek(0);
+                break;
+            }
             case OP_EQUAL: {
                 Value b = pop();
                 Value a = pop();
@@ -315,25 +358,25 @@ static InterpretResult run() {
                 printf("\n");
                 break;
             }
-            // 向前跳转
+                // 向前跳转
             case OP_JUMP: {
                 uint16_t offset = READ_SHORT();
                 frame->ip += offset;
                 break;
             }
-            // 为 false 则跳转
+                // 为 false 则跳转
             case OP_JUMP_IF_FALSE: {
                 uint16_t offset = READ_SHORT();
                 if (isFalsey(peek(0))) frame->ip += offset;
                 break;
             }
-            // 反向跳转
+                // 反向跳转
             case OP_LOOP: {
                 uint16_t offset = READ_SHORT();
                 frame->ip -= offset;
                 break;
             }
-            // 调用函数
+                // 调用函数
             case OP_CALL: {
                 // 获取参数数量
                 int argCount = READ_BYTE();
@@ -343,9 +386,32 @@ static InterpretResult run() {
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
-            //
+                // 闭包的解释过程
+            case OP_CLOSURE: {
+                // 获取函数
+                ObjFunction *function = AS_FUNCTION(READ_CONSTANT());
+                // 转为闭包
+                ObjClosure *closure = newClosure(function);
+                // 转为 value 值，并入栈
+                push(OBJ_VAL(closure));
+                for (int i = 0; i < closure->upvalueCount; i++) {
+                    uint8_t isLocal = READ_BYTE();
+                    uint8_t index = READ_BYTE();
+                    if (isLocal) {
+                        closure->upvalues[i] = captureUpvalue(frame->slots + index);
+                    } else {
+                        closure->upvalues[i] = frame->closure->upvalues[index];
+                    }
+                }
+                break;
+            }
+            case OP_CLOSE_UPVALUE:
+                closeUpvalues(vm.stackTop - 1);
+                pop();
+                break;
             case OP_RETURN: {
                 Value result = pop();
+                closeUpvalues(frame->slots);
                 // 函数减一
                 vm.frameCount--;
 
@@ -379,15 +445,11 @@ InterpretResult interpret(const char *source) {
 //    exit(0);
     if (function == NULL)
         return INTERPRET_COMPILE_ERROR;
-
     push(OBJ_VAL(function));
-
-    CallFrame *frame = &vm.frames[vm.frameCount++];
-    frame->function = function;
-    frame->ip = function->chunk.code;
-    frame->slots = vm.stack;
-
-    call(function, 0);
+    ObjClosure *closure = newClosure(function);
+    pop();
+    push(OBJ_VAL(closure));
+    call(closure, 0);
     return run();
 }
 

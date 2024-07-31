@@ -33,7 +33,7 @@ void freeValueArray(ValueArray *array) {
     initValueArray(array);
 }
 
-// 输出常量池中的数据的值，其中要将 value 值转为 C 语言的值
+// 输出常量池中的数据的值，其中要将 value 值转为 C 语言的值（debug 时使用）
 void printValue(Value value) {
     switch (value.type) {
         case VAL_BOOL:

@@ -19,14 +19,21 @@ void *reallocate(void *pointer, size_t oldSize, size_t newSize) {
 
 static void freeObject(Obj *object) {
     switch (object->type) {
-        // 释放函数内存
+        // 释放闭包对象
+        case OBJ_CLOSURE: {
+            ObjClosure *closure = (ObjClosure *) object;
+            FREE_ARRAY(ObjUpvalue*, closure->upvalues, closure->upvalueCount);
+            FREE(ObjClosure, object);
+            break;
+        }
+            // 释放函数内存
         case OBJ_FUNCTION: {
-            ObjFunction* function = (ObjFunction*)object;
+            ObjFunction *function = (ObjFunction *) object;
             freeChunk(&function->chunk);
             FREE(ObjFunction, object);
             break;
         }
-        // 释放本地函数（C 语言函数）
+            // 释放本地函数（C 语言函数）
         case OBJ_NATIVE:
             FREE(ObjNative, object);
             break;
@@ -36,6 +43,9 @@ static void freeObject(Obj *object) {
             FREE(ObjString, object);
             break;
         }
+        case OBJ_UPVALUE:
+            FREE(ObjUpvalue, object);
+            break;
     }
 }
 

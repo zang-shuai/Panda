@@ -67,10 +67,16 @@ typedef struct {
     Token name;
     // 变量深度、同一深度的变量在同一个代码块中
     int depth;
+    // 是否被闭包捕获，如果捕获了，则不能移除
     bool isCaptured;
 
 } Local;
 
+// 存储闭包外值，供闭包使用
+typedef struct {
+    uint8_t index;
+    bool isLocal;
+} Upvalue;
 // 函数类型，区分它在编译顶层代码还是函数主体
 typedef enum {
     // 普通函数
@@ -92,6 +98,7 @@ typedef struct Compiler {
     // 函数类型
     FunctionType type;
     Local locals[UINT8_COUNT];
+    Upvalue upvalues[UINT8_COUNT];
     // 局部变量数量
     int localCount;
     // 局部变量深度范围
@@ -274,6 +281,7 @@ static void initCompiler(Compiler *compiler, FunctionType type) {
     }
     Local *local = &current->locals[current->localCount++];
     local->depth = 0;
+    local->isCaptured = false;
 //    local->name.start = "";
 //    local->name.length = 0;
     if (type != TYPE_FUNCTION) {
@@ -314,6 +322,42 @@ static int resolveLocal(Compiler *compiler, Token *name) {
     return -1;
 }
 
+// 将闭包外值加入当前范围的数组
+static int addUpvalue(Compiler *compiler, uint8_t index,
+                      bool isLocal) {
+    int upvalueCount = compiler->function->upvalueCount;
+    for (int i = 0; i < upvalueCount; i++) {
+        Upvalue *upvalue = &compiler->upvalues[i];
+        if (upvalue->index == index && upvalue->isLocal == isLocal) {
+            return i;
+        }
+    }
+    if (upvalueCount == UINT8_COUNT) {
+        error("Too many closure variables in function.（闭包外变量过多，超出容量）");
+        return 0;
+    }
+    compiler->upvalues[upvalueCount].isLocal = isLocal;
+    compiler->upvalues[upvalueCount].index = index;
+    return compiler->function->upvalueCount++;
+}
+
+// 获取闭包外的值
+static int resolveUpvalue(Compiler *compiler, Token *name) {
+    if (compiler->enclosing == NULL) return -1;
+
+    int local = resolveLocal(compiler->enclosing, name);
+    if (local != -1) {
+        compiler->enclosing->locals[local].isCaptured = true;
+        return addUpvalue(compiler, (uint8_t) local, true);
+    }
+
+    int upvalue = resolveUpvalue(compiler->enclosing, name);
+    if (upvalue != -1) {
+        return addUpvalue(compiler, (uint8_t) upvalue, false);
+    }
+    return -1;
+}
+
 // 增加一个局部变量，局部变量的深度为-1
 static void addLocal(Token name) {
     // 超出变量池限制则报错
@@ -326,6 +370,7 @@ static void addLocal(Token name) {
     local->name = name;
 
     local->depth = -1;
+    local->isCaptured = false;
 }
 
 // 声明变量（仅局部）
@@ -474,7 +519,11 @@ static void function(FunctionType type) {
     block();
 
     ObjFunction *function = endCompiler();
-    emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
+    emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
+    for (int i = 0; i < function->upvalueCount; i++) {
+        emitByte(compiler.upvalues[i].isLocal ? 1 : 0);
+        emitByte(compiler.upvalues[i].index);
+    }
 }
 
 static void funDeclaration() {
@@ -810,6 +859,9 @@ static void namedVariable(Token name, bool canAssign) {
     if (arg != -1) {
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
+    } else if ((arg = resolveUpvalue(current, &name)) != -1) {
+        getOp = OP_GET_UPVALUE;
+        setOp = OP_SET_UPVALUE;
     } else {
         arg = identifierConstant(&name);
         getOp = OP_GET_GLOBAL;
@@ -958,7 +1010,11 @@ static void endScope() {
     current->scopeDepth--;
     // 加入退出指令
     while (current->localCount > 0 && current->locals[current->localCount - 1].depth > current->scopeDepth) {
-        emitByte(OP_POP);
+        if (current->locals[current->localCount - 1].isCaptured) {
+            emitByte(OP_CLOSE_UPVALUE);
+        } else {
+            emitByte(OP_POP);
+        }
         current->localCount--;
     }
 }
