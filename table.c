@@ -18,11 +18,13 @@ void initTable(Table *table) {
     table->capacity = 0;
     table->entries = NULL;
 }
+
 // 销毁 hash 表
 void freeTable(Table *table) {
     FREE_ARRAY(Entry, table->entries, table->capacity);
     initTable(table);
 }
+
 // 查询要找的 entry，传入为：初试 entry，容量大小，要查找到的 key
 static Entry *findEntry(Entry *entries, int capacity,
                         ObjString *key) {
@@ -99,6 +101,7 @@ void tableAddAll(Table *from, Table *to) {
         }
     }
 }
+
 // 查找表中是否存有该字符串
 ObjString *tableFindString(Table *table, const char *chars,
                            int length, uint32_t hash) {
@@ -121,6 +124,22 @@ ObjString *tableFindString(Table *table, const char *chars,
     }
 }
 
+void tableRemoveWhite(Table *table) {
+    for (int i = 0; i < table->capacity; i++) {
+        Entry *entry = &table->entries[i];
+        if (entry->key != NULL && !entry->key->obj.isMarked) {
+            tableDelete(table, entry->key);
+        }
+    }
+}
+
+void markTable(Table *table) {
+    for (int i = 0; i < table->capacity; i++) {
+        Entry *entry = &table->entries[i];
+        markObject((Obj *) entry->key);
+        markValue(entry->value);
+    }
+}
 // 检索值，将查到的值存入 value 中
 bool tableGet(Table *table, ObjString *key, Value *value) {
     // 如果表为空，则返回 false

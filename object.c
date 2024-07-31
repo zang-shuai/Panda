@@ -17,8 +17,12 @@
 static Obj *allocateObject(size_t size, ObjType type) {
     Obj *object = (Obj *) reallocate(NULL, 0, size);
     object->type = type;
+    object->isMarked = false;
     object->next = vm.objects;
     vm.objects = object;
+#ifdef DEBUG_LOG_GC
+    printf("%p allocate %zu for %d\n", (void *) object, size, type);
+#endif
     return object;
 }
 
@@ -28,8 +32,10 @@ static ObjString *allocateString(char *chars, int length,
     string->length = length;
     string->chars = chars;
     string->hash = hash;
+    push(OBJ_VAL(string));
     // 键为字符串，值为 NIL（不关心值是多少）
     tableSet(&vm.strings, string, NIL_VAL);
+    pop();
     return string;
 }
 

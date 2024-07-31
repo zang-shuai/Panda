@@ -5,6 +5,7 @@
 #include "chunk.h"
 #include "memory.h"
 
+#include "vm.h"
 
 
 void initChunk(Chunk *chunk) {
@@ -41,6 +42,8 @@ void freeChunk(Chunk *chunk) {
 
 // 将值 value 插入到常量池中，并返回该值在常量池中的位置
 int addConstant(Chunk *chunk, Value value) {
+    push(value);
     writeValueArray(&chunk->constants, value);
+    pop();
     return chunk->constants.count - 1;
 }

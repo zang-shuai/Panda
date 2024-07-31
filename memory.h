@@ -9,6 +9,7 @@
 #include "chunk.h"
 #include "object.h"
 #include <stdlib.h>
+#include "compiler.h"
 
 // 在堆上分配一个新数组，其大小刚好可以容纳字符串中的字符和末尾的结束符
 #define ALLOCATE(type, count) \
@@ -30,6 +31,13 @@
 
 // 重新分配内存函数，为 0 则代表释放内存
 void *reallocate(void *pointer, size_t oldSize, size_t newSize);
+
+void markObject(Obj *object);
+
+void markValue(Value value);
+
+// 垃圾回收函数
+void collectGarbage();
 
 // 释放对象链表的指针
 void freeObjects();

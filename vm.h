@@ -15,11 +15,11 @@
 // 函数调用
 typedef struct {
     // 指向函数对象的指针
-    ObjClosure* closure;
+    ObjClosure *closure;
     // chunk 指向的位置
-    uint8_t* ip;
+    uint8_t *ip;
     // 数组，里面存储局部变量（全局变量在常量池中）
-    Value* slots;
+    Value *slots;
 } CallFrame;
 
 // 虚拟机
@@ -41,9 +41,15 @@ typedef struct {
     // 字符串 hash 表
     Table strings;
     //
-    ObjUpvalue* openUpvalues;
+    ObjUpvalue *openUpvalues;
+    // GC
+    size_t bytesAllocated;
+    size_t nextGC;
     // 对象链
-    Obj* objects;
+    Obj *objects;
+    int grayCount;
+    int grayCapacity;
+    Obj **grayStack;
 } VM;
 
 // 解释结果

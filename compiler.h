@@ -9,6 +9,8 @@
 //#include "chunk.h"
 #include "vm.h"
 
-ObjFunction* compile(const char* source);
+ObjFunction *compile(const char *source);
+
+void markCompilerRoots();
 
 #endif //PANDA_COMPILER_H

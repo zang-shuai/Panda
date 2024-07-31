@@ -63,6 +63,11 @@ void initVM() {
     resetStack();
     // 对象链初试为空
     vm.objects = NULL;
+    vm.bytesAllocated = 0;
+    vm.nextGC = 1024 * 1024;
+    vm.grayCount = 0;
+    vm.grayCapacity = 0;
+    vm.grayStack = NULL;
     initTable(&vm.globals);
     // 初始化 hash 表
     initTable(&vm.strings);
@@ -162,8 +167,10 @@ static bool isFalsey(Value value) {
 // 连接函数，连接两个字符串
 static void concatenate() {
     // 从栈顶弹出 2 个值
-    ObjString *b = AS_STRING(pop());
-    ObjString *a = AS_STRING(pop());
+//    ObjString *b = AS_STRING(pop());
+//    ObjString *a = AS_STRING(pop());
+    ObjString* b = AS_STRING(peek(0));
+    ObjString* a = AS_STRING(peek(1));
     // 计算总长度
     int length = a->length + b->length;
     // 重新分配内存
@@ -174,6 +181,8 @@ static void concatenate() {
     chars[length] = '\0';
     // 获取新的 string 对象
     ObjString *result = takeString(chars, length);
+    pop();
+    pop();
     // 将新的 C字符串转为 panda 值
     push(OBJ_VAL(result));
 }
