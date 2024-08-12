@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.22.1)
 project(Panda C)
 
 set(CMAKE_C_STANDARD 11)
@@ -19,4 +19,5 @@ add_executable(Panda main.c
         object.c
         object.h
         table.c
-        table.h)
+        table.h
+        table.c)

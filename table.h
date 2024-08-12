@@ -29,8 +29,7 @@ bool tableSet(Table *table, ObjString *key, Value value);
 // 哈希表的所有条目复制到另一个哈希表中
 void tableAddAll(Table *from, Table *to);
 
-ObjString *tableFindString(Table *table, const char *chars,
-                           int length, uint32_t hash);
+ObjString *tableFindString(Table *table, const char *chars, int length, uint32_t hash);
 
 void tableRemoveWhite(Table *table);
 

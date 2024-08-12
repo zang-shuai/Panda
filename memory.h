@@ -12,8 +12,7 @@
 #include "compiler.h"
 
 // 在堆上分配一个新数组，其大小刚好可以容纳字符串中的字符和末尾的结束符
-#define ALLOCATE(type, count) \
-    (type*)reallocate(NULL, 0, sizeof(type) * (count))
+#define ALLOCATE(type, count) (type*)reallocate(NULL, 0, sizeof(type) * (count))
 
 #define FREE(type, pointer) reallocate(pointer, sizeof(type), 0)
 
@@ -21,13 +20,10 @@
 #define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
 
 // 返回扩容后的新地址
-//#define GROW_ARRAY(type, pointer, oldCount, newCount) \
-//        (type*)reallocate(pointer, sizeof(type) * (oldCount),sizeof(type) * (newCount))
 #define GROW_ARRAY(type, pointer, oldCount, newCount) (type*)reallocate(pointer, sizeof(type) * (oldCount), sizeof(type) * (newCount))
 
 // 释放旧地址
-#define FREE_ARRAY(type, pointer, oldCount) \
-    reallocate(pointer, sizeof(type) * (oldCount), 0)
+#define FREE_ARRAY(type, pointer, oldCount) reallocate(pointer, sizeof(type) * (oldCount), 0)
 
 // 重新分配内存函数，为 0 则代表释放内存
 void *reallocate(void *pointer, size_t oldSize, size_t newSize);

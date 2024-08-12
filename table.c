@@ -25,22 +25,25 @@ void freeTable(Table *table) {
     initTable(table);
 }
 
-// 查询要找的 entry，传入为：初试 entry，容量大小，要查找到的 key
+// 查询要找的 entry，传入为：初始 entry，容量大小，要查找到的 key
 static Entry *findEntry(Entry *entries, int capacity,
                         ObjString *key) {
     // 获取到该值在哪个索引中
     uint32_t index = key->hash % capacity;
     //
     Entry *tombstone = NULL;
+
     for (;;) {
+        // 获取该索引
         Entry *entry = &entries[index];
-        // 正确处理墓碑（这个 key 是 null 还是不存在）
+        // 正确处理墓碑（）
         if (entry->key == NULL) {
+            // key 为 NULL，值为 NIL，说明这不是墓碑，就是空的，墓碑为空返回 NIL，否则返回上一个空墓碑（用于插入使用）
             if (IS_NIL(entry->value)) {
-                // Empty entry.
                 return tombstone != NULL ? tombstone : entry;
-            } else {
-                // We found a tombstone.
+            }
+                // key 为 NULL，值为 BOOL_TRUE，说明这是个墓碑，继续寻找，tombstone标记这个墓碑
+            else {
                 if (tombstone == NULL) tombstone = entry;
             }
         } else if (entry->key == key) {
@@ -61,16 +64,17 @@ static void adjustCapacity(Table *table, int capacity) {
         entries[i].value = NIL_VAL;
     }
     table->count = 0;
-    // 将就 hash 表中的值插入到新的表中
+    // 将原始 hash 表中的值插入到新的表中
     for (int i = 0; i < table->capacity; i++) {
         Entry *entry = &table->entries[i];
+        // 不移植墓碑
         if (entry->key == NULL) continue;
-
         Entry *dest = findEntry(entries, capacity, entry->key);
         dest->key = entry->key;
         dest->value = entry->value;
         table->count++;
     }
+    // 销毁原表
     FREE_ARRAY(Entry, table->entries, table->capacity);
     table->entries = entries;
     table->capacity = capacity;
@@ -78,13 +82,16 @@ static void adjustCapacity(Table *table, int capacity) {
 
 // 将给定的键/值对添加到给定的哈希表中。如果该键的条目已存在，新值将覆盖旧值。如果添加了新条目，则该函数返回`true`。
 bool tableSet(Table *table, ObjString *key, Value value) {
+    // 检测是否需要调整容量
     if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
         int capacity = GROW_CAPACITY(table->capacity);
         adjustCapacity(table, capacity);
     }
+    // 查找键值对
     Entry *entry = findEntry(table->entries, table->capacity, key);
+    // 是否找到值
     bool isNewKey = entry->key == NULL;
-    // 计数时处理墓碑
+    // 如果没有找到值，但是找到了相关键，则插入
     if (isNewKey && IS_NIL(entry->value)) table->count++;
 
     entry->key = key;
@@ -124,6 +131,8 @@ ObjString *tableFindString(Table *table, const char *chars,
     }
 }
 
+
+// 垃圾回收时使用，删除这个表中，没有被标记删除的元素
 void tableRemoveWhite(Table *table) {
     for (int i = 0; i < table->capacity; i++) {
         Entry *entry = &table->entries[i];
@@ -133,6 +142,7 @@ void tableRemoveWhite(Table *table) {
     }
 }
 
+// 遍历，分别标记里面的键和值
 void markTable(Table *table) {
     for (int i = 0; i < table->capacity; i++) {
         Entry *entry = &table->entries[i];
@@ -140,7 +150,7 @@ void markTable(Table *table) {
         markValue(entry->value);
     }
 }
-// 检索值，将查到的值存入 value 中
+// 从 hash 查询值，将查到的值存入 value 中
 bool tableGet(Table *table, ObjString *key, Value *value) {
     // 如果表为空，则返回 false
     if (table->count == 0) return false;

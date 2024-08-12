@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include "common.h"
+//#include "object.h"
 
 typedef struct Obj Obj;
 typedef struct ObjString ObjString;
@@ -19,7 +20,9 @@ typedef enum {
 } ValueType;
 
 typedef struct {
+    // 类型
     ValueType type;
+    // 值
     union {
         bool boolean;
         double number;

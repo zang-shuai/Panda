@@ -8,7 +8,7 @@
 #include "chunk.h"
 //#include "value.h"
 #include "object.h"
-#include "table.h"
+//#include "table.h"
 
 #define FRAMES_MAX 64
 #define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
@@ -40,6 +40,7 @@ typedef struct {
     Table globals;
     // 字符串 hash 表
     Table strings;
+    ObjString* initString;
     //
     ObjUpvalue *openUpvalues;
     // GC
@@ -47,6 +48,8 @@ typedef struct {
     size_t nextGC;
     // 对象链
     Obj *objects;
+
+    // 动态数组，表示灰色栈的数量
     int grayCount;
     int grayCapacity;
     Obj **grayStack;

@@ -71,12 +71,15 @@ void initVM() {
     initTable(&vm.globals);
     // 初始化 hash 表
     initTable(&vm.strings);
+    vm.initString = NULL;
+    vm.initString = copyString("init", 4);
     defineNative("clock", clockNative);
 }
 
 void freeVM() {
     // 释放 hash 表
     freeTable(&vm.strings);
+    vm.initString = NULL;
     // 释放对象链
     freeObjects();
     freeTable(&vm.globals);
@@ -102,10 +105,28 @@ static bool call(ObjClosure *closure, int argCount) {
     return true;
 }
 
+
 static bool callValue(Value callee, int argCount) {
     if (IS_OBJ(callee)) {
         switch (OBJ_TYPE(callee)) {
-            // OBJ_CLOSURE包装了所有函数，因此不再需要OBJ_FUNCTION
+            case OBJ_BOUND_METHOD: {
+                ObjBoundMethod *bound = AS_BOUND_METHOD(callee);
+                vm.stackTop[-argCount - 1] = bound->receiver;
+                return call(bound->method, argCount);
+            }
+            case OBJ_CLASS: {
+                ObjClass *klass = AS_CLASS(callee);
+                vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
+                Value initializer;
+                if (tableGet(&klass->methods, vm.initString, &initializer)) {
+                    return call(AS_CLOSURE(initializer), argCount);
+                } else if (argCount != 0) {
+                    runtimeError("Expected 0 arguments but got %d.", argCount);
+                    return false;
+                }
+                return true;
+            }
+
             case OBJ_CLOSURE:
                 return call(AS_CLOSURE(callee), argCount);
             case OBJ_NATIVE: {
@@ -116,11 +137,49 @@ static bool callValue(Value callee, int argCount) {
                 return true;
             }
             default:
-                break; // Non-callable object type.
+                break;
         }
     }
     runtimeError("Can only call functions and classes.");
     return false;
+}
+
+// 初始化器
+static bool invokeFromClass(ObjClass *klass, ObjString *name, int argCount) {
+    Value method;
+    if (!tableGet(&klass->methods, name, &method)) {
+        runtimeError("Undefined property '%s'.", name->chars);
+        return false;
+    }
+    return call(AS_CLOSURE(method), argCount);
+}
+
+static bool invoke(ObjString *name, int argCount) {
+    Value receiver = peek(argCount);
+    if (!IS_INSTANCE(receiver)) {
+        runtimeError("Only instances have methods.(只有对象才有方法)");
+        return false;
+    }
+    ObjInstance *instance = AS_INSTANCE(receiver);
+    Value value;
+    if (tableGet(&instance->fields, name, &value)) {
+        vm.stackTop[-argCount - 1] = value;
+        return callValue(value, argCount);
+    }
+    return invokeFromClass(instance->klass, name, argCount);
+}
+
+static bool bindMethod(ObjClass *klass, ObjString *name) {
+    Value method;
+    if (!tableGet(&klass->methods, name, &method)) {
+        runtimeError("Undefined property '%s'.", name->chars);
+        return false;
+    }
+    //
+    ObjBoundMethod *bound = newBoundMethod(peek(0), AS_CLOSURE(method));
+    pop();
+    push(OBJ_VAL(bound));
+    return true;
 }
 
 static ObjUpvalue *captureUpvalue(Value *local) {
@@ -150,13 +209,19 @@ static ObjUpvalue *captureUpvalue(Value *local) {
 }
 
 static void closeUpvalues(Value *last) {
-    while (vm.openUpvalues != NULL &&
-           vm.openUpvalues->location >= last) {
+    while (vm.openUpvalues != NULL && vm.openUpvalues->location >= last) {
         ObjUpvalue *upvalue = vm.openUpvalues;
         upvalue->closed = *upvalue->location;
         upvalue->location = &upvalue->closed;
         vm.openUpvalues = upvalue->next;
     }
+}
+
+static void defineMethod(ObjString *name) {
+    Value method = peek(0);
+    ObjClass *klass = AS_CLASS(peek(1));
+    tableSet(&klass->methods, name, method);
+    pop();
 }
 
 // 判断该 value 是否为 nil 或者 false，返回 bool
@@ -169,8 +234,8 @@ static void concatenate() {
     // 从栈顶弹出 2 个值
 //    ObjString *b = AS_STRING(pop());
 //    ObjString *a = AS_STRING(pop());
-    ObjString* b = AS_STRING(peek(0));
-    ObjString* a = AS_STRING(peek(1));
+    ObjString *b = AS_STRING(peek(0));
+    ObjString *a = AS_STRING(peek(1));
     // 计算总长度
     int length = a->length + b->length;
     // 重新分配内存
@@ -204,7 +269,7 @@ static InterpretResult run() {
 #define BINARY_OP(valueType, op) \
     do { \
       if (!IS_NUMBER(peek(0)) || !IS_NUMBER(peek(1))) { \
-        runtimeError("Operands must be numbers.（比较的值必须是字符串）"); \
+        runtimeError("Operands must be numbers.（比较的值必须是数字）"); \
         return INTERPRET_RUNTIME_ERROR; \
       } \
       double b = AS_NUMBER(pop()); \
@@ -233,8 +298,6 @@ static InterpretResult run() {
                                (int) (frame->ip - frame->closure->function->chunk.code));
 #endif
         uint8_t instruction;
-
-
         switch (instruction = READ_BYTE()) {
             // 如果当前指令为 OP_CONSTANT ，则读取常量（位于下一个chunk 块），并将读取的常量返回，再输出一个空行
             case OP_CONSTANT: {
@@ -246,17 +309,20 @@ static InterpretResult run() {
                 break;
             }
                 // 将 nil 值加入到栈中
-            case OP_NIL:
+            case OP_NIL: {
                 push(NIL_VAL);
                 break;
+            }
                 // 将 true 值加入到栈中
-            case OP_TRUE:
+            case OP_TRUE: {
                 push(BOOL_VAL(true));
                 break;
+            }
                 // 将 false 值加入到栈中
-            case OP_FALSE:
+            case OP_FALSE: {
                 push(BOOL_VAL(false));
                 break;
+            }
                 // 读取局部变量，加入到栈中
             case OP_GET_LOCAL: {
                 // (*frame->ip++)
@@ -282,9 +348,10 @@ static InterpretResult run() {
                 push(value);
                 break;
             }
-            case OP_POP:
+            case OP_POP: {
                 pop();
                 break;
+            }
             case OP_DEFINE_GLOBAL: {
                 ObjString *name = READ_STRING();
                 tableSet(&vm.globals, name, peek(0));
@@ -310,21 +377,60 @@ static InterpretResult run() {
                 *frame->closure->upvalues[slot]->location = peek(0);
                 break;
             }
+            case OP_GET_PROPERTY: {
+                if (!IS_INSTANCE(peek(0))) {
+                    runtimeError("Only instances have properties.(只有实例才有属性。)");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                ObjInstance *instance = AS_INSTANCE(peek(0));
+                ObjString *name = READ_STRING();
+
+                Value value;
+                if (tableGet(&instance->fields, name, &value)) {
+                    pop(); // Instance.
+                    push(value);
+                    break;
+                }
+                if (!bindMethod(instance->klass, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
+            case OP_SET_PROPERTY: {
+                if (!IS_INSTANCE(peek(1))) {
+                    runtimeError("Only instances have fields.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                ObjInstance *instance = AS_INSTANCE(peek(1));
+                tableSet(&instance->fields, READ_STRING(), peek(0));
+                Value value = pop();
+                pop();
+                push(value);
+                break;
+            }
+            case OP_GET_SUPER: {
+                ObjString *name = READ_STRING();
+                ObjClass *superclass = AS_CLASS(pop());
+
+                if (!bindMethod(superclass, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
             case OP_EQUAL: {
                 Value b = pop();
                 Value a = pop();
                 push(BOOL_VAL(valuesEqual(a, b)));
                 break;
             }
-
-            case OP_GREATER:
+            case OP_GREATER: {
                 BINARY_OP(BOOL_VAL, >);
                 break;
-            case OP_LESS:
+            }
+            case OP_LESS: {
                 BINARY_OP(BOOL_VAL, <);
                 break;
-
-
+            }
             case OP_ADD: {
                 if (IS_STRING(peek(0)) && IS_STRING(peek(1))) {
                     concatenate();
@@ -339,28 +445,31 @@ static InterpretResult run() {
                 }
                 break;
             }
-            case OP_SUBTRACT:
+            case OP_SUBTRACT: {
                 BINARY_OP(NUMBER_VAL, -);
                 break;
-            case OP_MULTIPLY:
+            }
+            case OP_MULTIPLY: {
                 BINARY_OP(NUMBER_VAL, *);
                 break;
-            case OP_DIVIDE:
+            }
+            case OP_DIVIDE: {
                 BINARY_OP(NUMBER_VAL, /);
                 break;
-            case OP_NOT:
+            }
+            case OP_NOT: {
                 push(BOOL_VAL(isFalsey(pop())));
                 break;
-
-            case OP_NEGATE:
+            }
+            case OP_NEGATE: {
                 if (!IS_NUMBER(peek(0))) {
-                    runtimeError("Operand must be a number.");
+                    runtimeError("Operand must be a number.(操作数必须是一个数字)");
 //                    runtimeError("操作数必须是一个数字。");
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 push(NUMBER_VAL(-AS_NUMBER(pop())));
                 break;
-
+            }
                 // 如果当前指令为 return，则直接返回 OK，解释成功
             case OP_PRINT: {
                 printValue(pop());
@@ -395,6 +504,25 @@ static InterpretResult run() {
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
+            case OP_INVOKE: {
+                ObjString *method = READ_STRING();
+                int argCount = READ_BYTE();
+                if (!invoke(method, argCount)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
+            case OP_SUPER_INVOKE: {
+                ObjString *method = READ_STRING();
+                int argCount = READ_BYTE();
+                ObjClass *superclass = AS_CLASS(pop());
+                if (!invokeFromClass(superclass, method, argCount)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
                 // 闭包的解释过程
             case OP_CLOSURE: {
                 // 获取函数
@@ -414,10 +542,36 @@ static InterpretResult run() {
                 }
                 break;
             }
-            case OP_CLOSE_UPVALUE:
+                //
+            case OP_CLASS: {
+                push(OBJ_VAL(newClass(READ_STRING())));
+                break;
+            }
+                //
+            case OP_CLOSE_UPVALUE: {
                 closeUpvalues(vm.stackTop - 1);
                 pop();
                 break;
+            }
+                //
+            case OP_INHERIT: {
+                Value superclass = peek(1);
+                if (!IS_CLASS(superclass)) {
+                    runtimeError("Superclass must be a class.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                ObjClass *subclass = AS_CLASS(peek(0));
+                tableAddAll(&AS_CLASS(superclass)->methods,
+                            &subclass->methods);
+                pop(); // Subclass.
+                break;
+            }
+                //
+            case OP_METHOD: {
+                defineMethod(READ_STRING());
+                break;
+            }
+                //
             case OP_RETURN: {
                 Value result = pop();
                 closeUpvalues(frame->slots);

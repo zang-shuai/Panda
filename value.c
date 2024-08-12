@@ -19,11 +19,12 @@ void initValueArray(ValueArray *array) {
 void writeValueArray(ValueArray *array, Value value) {
     if (array->capacity < array->count + 1) {
         int oldCapacity = array->capacity;
+        // 获取扩容后的容量
         array->capacity = GROW_CAPACITY(oldCapacity);
-        array->values = GROW_ARRAY(Value, array->values,
-                                   oldCapacity, array->capacity);
+        // 真实扩容，扩容的具体过程，由 C 语言内部完成
+        array->values = GROW_ARRAY(Value, array->values, oldCapacity, array->capacity);
     }
-
+    // 插入新值
     array->values[array->count] = value;
     array->count++;
 }
@@ -50,7 +51,7 @@ void printValue(Value value) {
             break;
     }
 }
-
+// 判断两个 Value 值是否相等
 bool valuesEqual(Value a, Value b) {
     if (a.type != b.type) return false;
     switch (a.type) {
@@ -60,16 +61,9 @@ bool valuesEqual(Value a, Value b) {
             return true;
         case VAL_NUMBER:
             return AS_NUMBER(a) == AS_NUMBER(b);
-
+            // 对象判断两个 Value 是否指针相等
         case VAL_OBJ:
             return AS_OBJ(a) == AS_OBJ(b);
-//        case VAL_OBJ: {
-//            ObjString *aString = AS_STRING(a);
-//            ObjString *bString = AS_STRING(b);
-//            return aString->length == bString->length &&
-//                   memcmp(aString->chars, bString->chars,
-//                          aString->length) == 0;
-//        }
         default:
             return false; // Unreachable.
     }

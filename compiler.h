@@ -6,7 +6,6 @@
 #define PANDA_COMPILER_H
 // 将文件转为chunk
 #include "object.h"
-//#include "chunk.h"
 #include "vm.h"
 
 ObjFunction *compile(const char *source);
